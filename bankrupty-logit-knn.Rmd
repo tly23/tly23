@@ -1,0 +1,1545 @@
+---
+title: "Harnessing Financial Ratios to Predict Corporate Bankruptcy"
+author:
+  - Bhargava, Akhil
+  - Ly, Trang
+  - Troxler, Cyrill 
+  - Savage, Carsten
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+  number_sections: true
+  theme: cosmo
+  highlight: tango
+---
+
+
+```{r Load libraries}
+
+library(tidyverse)
+library(here)
+library(tibble)
+library(class)
+library(caret)
+library(ROSE)
+
+# The here library will get us the path to the root directory.
+# Then we can access the CSV easily such as in the chunk below.
+print(here())
+
+```
+
+
+```{r}
+# options(scipen=999)
+```
+
+
+
+```{r Load CSV}
+
+bankruptcy_data <- read_csv(here("Data", "bankruptcies_tw.csv"))
+
+```
+
+
+```{r Summarize data}
+
+bankruptcy_summary_stats <- summary(bankruptcy_data)
+
+bankruptcy_summary_stats_frame <- as.data.frame(bankruptcy_summary_stats)
+
+bankruptcy_summary_stats_frame <- (bankruptcy_summary_stats_frame %>%
+  select("Var2", "Freq") %>%
+  rename("Variable" = "Var2", "Metric" = "Freq")
+)
+
+head(bankruptcy_summary_stats_frame, 12)
+
+```
+
+
+```{r Add financial ratio category to dataset}
+
+profitability_ratios <- c(
+                          "Bankrupt?",
+                          "ROA(C) before interest and depreciation before interest", 
+                          "ROA(A) before interest and % after tax", 
+                          "ROA(B) before interest and depreciation after tax", 
+                          "Operating Gross Margin", 
+                          "Realized Sales Gross Margin", 
+                          "Operating Profit Rate", 
+                          "Pre-tax net Interest Rate", 
+                          "After-tax net Interest Rate", 
+                          "Operating profit/Paid-in capital", 
+                          "Net profit before tax/Paid-in capital", 
+                          "Gross Profit to Sales", 
+                          "Net Income to Total Assets", 
+                          "Net Income to Stockholder's Equity", 
+                          "Revenue Per Share (Yuan ¥)", 
+                          "Operating Profit Per Share (Yuan ¥)",
+                          "Operating profit per person"
+                          )
+
+# Market Prospect Ratios
+market_prospect_ratios <- c(
+                            "Bankrupt?",
+                            "Persistent EPS in the Last Four Seasons", 
+                            "Per Share Net profit before tax (Yuan ¥)",
+                            "Net Value Per Share (B)",
+                            "Net Value Per Share (A)",
+                            "Net Value Per Share (C)"
+                            )
+
+solvency_ratios <- c(
+                    "Bankrupt?",
+                    "Cash Reinvestment %", 
+                    "Current Ratio", 
+                    "Interest Expense Ratio", 
+                    "Liability to Equity", 
+                    "Working Capital to Total Assets", 
+                    "Quick Assets/Total Assets", 
+                    "Current Assets/Total Assets", 
+                    "Cash/Total Assets", 
+                    "Quick Assets/Current Liability", 
+                    "Cash/Current Liability", 
+                    "Current Liability to Assets", 
+                    "Operating Funds to Liability", 
+                    "Inventory/Working Capital", 
+                    "Inventory/Current Liability", 
+                    "Current Liabilities/Liability", 
+                    "Working Capital/Equity", 
+                    "Current Liabilities/Equity", 
+                    "Long-term Liability to Current Assets", 
+                    "Current Liability to Current Assets", 
+                    "Liability-Assets Flag", 
+                    "Equity to Liability" 
+                    ) 
+
+capital_structure_ratios = c(
+                             "Bankrupt?",
+                             "Fixed Assets to Assets", 
+                             "Current Liability to Liability",
+                             "Current Liability to Equity",
+                             "Equity to Long-term Liability",
+                             "Liability to Equity",
+                             "Interest Coverage Ratio (Interest expense to EBIT)"
+                             )
+
+other_unspecified_ratios = c(
+                             "Bankrupt?",
+                             "Operating Expense Rate", 
+                             "Research and development expense rate",
+                             "Tax rate (A)",
+                             "Revenue per person",
+                             "Total assets to GNP price"
+                             )
+
+turnover_ratios = c(
+                    "Bankrupt?",
+                    "Total Asset Turnover", 
+                    "Accounts Receivable Turnover",
+                    "Inventory Turnover Rate (times)",
+                    "Fixed Assets Turnover Frequency",
+                    "Net Worth Turnover Rate (times)",
+                    "Current Asset Turnover Rate",
+                    "Quick Asset Turnover Rate"
+                    )
+
+cash_flow_ratios = c(
+                     "Bankrupt?",
+                     "Cash Flow to Sales", 
+                     "Cash Flow to Total Assets",
+                     "Cash Flow Per Share"
+                    )
+
+growth_ratios = c(
+                  "Bankrupt?",
+                  "Realized Sales Gross Profit Growth Rate", 
+                  "Operating Profit Growth Rate",
+                  "After-tax Net Profit Growth Rate",
+                  "Regular Net Profit Growth Rate",
+                  "Continuous Net Profit Growth Rate",
+                  "Total Asset Growth Rate",
+                  "Net Value Growth Rate",
+                  "Total Asset Return Growth Rate Ratio"
+                  )
+
+```
+
+
+```{r Get subsets of data using lists of columns}
+
+profitability_frame = bankruptcy_data[, profitability_ratios]
+
+market_prospect_frame = bankruptcy_data[, market_prospect_ratios]
+
+solvency_frame = bankruptcy_data[, solvency_ratios]
+
+capital_structure_frame = bankruptcy_data[, capital_structure_ratios]
+
+other_ratios_frame = bankruptcy_data[, other_unspecified_ratios]
+
+turnover_ratios_frame = bankruptcy_data[, turnover_ratios]
+
+cash_flow_frame = bankruptcy_data[, cash_flow_ratios]
+
+growth_ratio_frame = bankruptcy_data[, growth_ratios]
+
+```
+
+
+```{r Create correlation matrix function}
+
+conduct_correlation_analysis = function(ratio_frame) {
+  
+  par(mar=c(7,4,4,2)+0.1) 
+  
+  correlation_matrix = cor(ratio_frame)
+  
+  name_of_dataset = deparse(substitute(ratio_frame))
+  
+  # Save as png. Toggled off for now.
+  # png(paste0(name_of_dataset,"heatmap.png"), width=800, height=750)
+  
+  heatmap(correlation_matrix, 
+                      Colv=NA,
+                      Rowv=NA,
+                      cexRow=1,
+                      cexCol=1,
+                      margins=c(20,20)
+          )
+  # Toggle title off for now.
+  #title(main=name_of_dataset)
+  graphics.off()
+  
+  correlation_matrix_frame = data.frame(correlation_matrix)
+  
+  return(correlation_matrix_frame)
+  
+}
+
+```
+
+
+```{r}
+
+correlation_matrix_all = conduct_correlation_analysis(bankruptcy_data)
+write.csv(correlation_matrix_all, here("Visualizations", "correlation_matrix_all.csv"))
+conduct_correlation_analysis(profitability_frame)
+conduct_correlation_analysis(market_prospect_frame)
+conduct_correlation_analysis(solvency_frame)
+conduct_correlation_analysis(capital_structure_frame)
+conduct_correlation_analysis(other_ratios_frame)
+conduct_correlation_analysis(turnover_ratios_frame)
+conduct_correlation_analysis(cash_flow_frame)
+conduct_correlation_analysis(growth_ratio_frame)
+
+
+```
+
+
+```{r Create PCA analysis function}
+
+# Make a function for the PCA Analysis.
+# Input is a dataframe, output is the PCA loadings as a long dataframe
+
+conduct_pca_analysis = function(ratio_frame) {
+  
+  independent_vars_frame = ratio_frame[, -which(names(ratio_frame) %in% c("Bankrupt?"))]
+  
+  pca_results = prcomp(independent_vars_frame, center=TRUE)
+  
+  name_of_dataset = deparse(substitute(ratio_frame))
+
+  # "main" argument allows us to dynamically create title of chart based on dataset name
+  plot(pca_results, type="lines", main=name_of_dataset)
+  
+  pca_results_loadings = pca_results$rotation
+  
+  pca_loadings_frame = data.frame(pca_results_loadings)
+
+  pca_loadings_frame = rownames_to_column(pca_loadings_frame, var="fin_ratio")
+
+  pca_loadings_longer_frame = pivot_longer(pca_loadings_frame, cols=starts_with("PC"), names_to = "pc_number")
+  
+  return(pca_loadings_longer_frame)
+  
+}
+
+```
+
+```{r Conduct PCA analysis on all dataframes using the conduct_pca_analysis function }
+
+all_ratios_loadings_frame = conduct_pca_analysis(bankruptcy_data)
+
+profit_ratios_loadings_frame = conduct_pca_analysis(profitability_frame)
+
+market_prospects_loadings_frame = conduct_pca_analysis(market_prospect_frame)
+
+solvency_loadings_frame = conduct_pca_analysis(solvency_frame)
+
+capital_struct_loadings_frame = conduct_pca_analysis(capital_structure_frame)
+
+turnover_ratios_loadings_frame = conduct_pca_analysis(turnover_ratios_frame)
+
+cash_flow_loadings_frame = conduct_pca_analysis(cash_flow_frame)
+
+growth_ratios_loadings_frame = conduct_pca_analysis(growth_ratio_frame)
+
+other_ratios_loadings_frame = conduct_pca_analysis(other_ratios_frame)
+
+```
+
+
+```{r Create function to get top X PCA components and top X vars}
+
+# Create a function to return the top X PCA components and top X vars.
+
+return_top_pca_components_and_vars = function(pca_loadings_frame, pca_index_limit, return_vars_limit) {
+  
+
+  top_principal_components_frame =  pca_loadings_frame %>%
+  mutate(pca_index=as.numeric(str_extract(pc_number, "\\d+"))) %>%
+  mutate(abs_loading=abs(value)) %>%
+  filter(pca_index <= pca_index_limit) %>%
+  arrange(pc_number, desc(abs_loading)) %>%
+  group_by(pc_number) %>%
+  slice_head(n=return_vars_limit)
+  
+  print(top_principal_components_frame)
+  
+  return(top_principal_components_frame)
+  
+}
+
+```
+
+
+```{r}
+
+# Limit the "top vars" to the first (2/5) of the distinct financial ratio vars list.
+
+top_all_vars_frame = return_top_pca_components_and_vars(all_ratios_loadings_frame, 8, round(length(unique(all_ratios_loadings_frame$fin_ratio))*(2/5)))
+
+top_profit_vars_frame = return_top_pca_components_and_vars(profit_ratios_loadings_frame, 1, round(length(unique(profit_ratios_loadings_frame$fin_ratio))*(2/5)))
+
+top_market_vars_frame = return_top_pca_components_and_vars(market_prospects_loadings_frame, 2, round(length(unique(market_prospects_loadings_frame$fin_ratio))*(2/5)))
+
+top_solvency_vars_frame = return_top_pca_components_and_vars(solvency_loadings_frame, 4, round(length(unique(solvency_loadings_frame$fin_ratio))*(2/5)))
+
+top_capital_struct_vars_frame = return_top_pca_components_and_vars(capital_struct_loadings_frame, 1, round(length(unique(capital_struct_loadings_frame$fin_ratio))*(2/5)))
+
+top_turnover_vars_frame = return_top_pca_components_and_vars(turnover_ratios_loadings_frame, 4, round(length(unique(turnover_ratios_loadings_frame$fin_ratio))*(2/5)))
+
+top_cash_flow_vars_frame = return_top_pca_components_and_vars(cash_flow_loadings_frame, 2, round(length(unique(cash_flow_loadings_frame$fin_ratio))*(2/5)))
+
+top_growth_ratio_vars_frame = return_top_pca_components_and_vars(growth_ratios_loadings_frame, 1, round(length(unique(growth_ratios_loadings_frame$fin_ratio))*(2/5)))
+
+top_other_vars_frame = return_top_pca_components_and_vars(other_ratios_loadings_frame, 2, round(length(unique(other_ratios_loadings_frame$fin_ratio))*(2/5)))
+
+```
+
+
+```{r Create function to graph the most promising variables from PCA analysis}
+
+# Make a function to graph the top independent variables from PCA analysis.
+
+graph_top_independent_vars = function(top_pca_components_vars_frame) {
+  
+  # Make a tiny function to wrap the title of each subplot so it doesn't get cutoff.
+  wrap_title = function(labels) {
+    sapply(labels, function(label) {
+      str_wrap(label, width=20)
+    })
+  }
+  
+  dataset_name = deparse(substitute(top_pca_components_vars_frame))
+  
+  # Save the plots by toggling these. But prevents plots from printing later.
+  # png(here("Visualizations", paste0(dataset_name,"_pca_loadings.png")), width=800, height=750)
+   
+  plot = ggplot(top_pca_components_vars_frame) +
+     aes(x = abs_loading, colour = pc_number) +
+     geom_histogram(bins = 30L, fill = "#0c4c8a") +
+     scale_color_hue() +
+     theme_dark() +
+     facet_wrap(vars(fin_ratio), labeller = as_labeller(wrap_title))
+    labs(x = "Absolute Loading Value", y="Count", title=dataset_name)
+    
+  # graphics.off()
+    
+  return(plot)
+  
+}
+
+```
+
+
+```{r Graph}
+
+all_top_vars_plot = graph_top_independent_vars(top_all_vars_frame)
+profit_top_vars_plot = graph_top_independent_vars(top_profit_vars_frame)
+market_prospects_top_vars_plot = graph_top_independent_vars(top_market_vars_frame)
+solvency_top_vars_plot = graph_top_independent_vars(top_solvency_vars_frame)
+capital_struct_top_vars_plot = graph_top_independent_vars(top_capital_struct_vars_frame)
+turnover_top_vars_plot = graph_top_independent_vars(top_turnover_vars_frame)
+cashflow_top_vars_plot = graph_top_independent_vars(top_cash_flow_vars_frame)
+growth_top_vars_plot = graph_top_independent_vars(top_growth_ratio_vars_frame)
+other_top_vars_plot = graph_top_independent_vars(top_other_vars_frame)
+
+print(all_top_vars_plot)
+print(profit_top_vars_plot)
+print(market_prospects_top_vars_plot)
+print(solvency_top_vars_plot)
+print(capital_struct_top_vars_plot)
+print(turnover_top_vars_plot)
+print(cashflow_top_vars_plot)
+print(growth_top_vars_plot)
+print(other_top_vars_plot)
+
+```
+
+
+```{r Create function to run logistic regression on each group}
+
+# Make a function to create a logistic model using input dataframe. Return the model object itself
+# as well as the training and testing subset dataframes.
+
+create_logistic_regression_model = function(top_x_pca_components_frame, list_desired_columns) {
+  
+  filter_top_x_pca_components_frame = top_x_pca_components_frame %>% 
+    filter(fin_ratio %in% list_desired_columns)
+
+  distinct_independent_variables = unique(filter_top_x_pca_components_frame$fin_ratio)
+
+  distinct_independent_variables_string = paste(distinct_independent_variables, collapse="` + `")
+  
+  distinct_independent_variables_string = paste0(distinct_independent_variables_string, "`")
+  
+  full_formula_string = paste0("`Bankrupt?` ~ `", distinct_independent_variables_string)
+  
+  # Finalizes the logistic regression formula
+  full_formula_string = as.formula(full_formula_string)
+  
+  print(full_formula_string)
+  
+  set.seed(47)
+  
+  # Get a subset of the dataframe and split into training and test sets.
+  full_subset_column_names = append(list_desired_columns, "Bankrupt?")
+  
+  subset_dataframe = bankruptcy_data[full_subset_column_names]
+  
+  data_partition = createDataPartition(subset_dataframe$`Bankrupt?`, p=0.7, list=FALSE)
+  
+  training_set = subset_dataframe[data_partition, ]
+  
+  test_set = subset_dataframe[-data_partition, ]
+  
+  # This approach assigns higher weights to instances of the minority class (class 1).
+  # This encourages the model to pay more attention to predicting instances of class 1 correctly.
+  # Below signifies "balanced" class weights.
+  # Class 1 will have a weight inversely proportional to their frequency relative to class 0.
+  logistic_model = glm(full_formula_string, 
+                       data=training_set, 
+                       family = binomial(link = "logit"),
+                       weights = ifelse(`Bankrupt?` == 1, sum(`Bankrupt?` == 0) / sum(`Bankrupt?` == 1), 1)
+                       )
+  
+  print(summary(logistic_model))
+  
+  return(list(Model=logistic_model,training_df=training_set,testing_df=test_set))
+  
+}
+
+```
+
+
+```{r include=TRUE}
+
+# So the create_logistic_regression_model function takes two inputs: Dataframe name and list of columns. For this chunk, see everything for top X components, all variables.
+
+
+print("ALL")
+log_model_all_top_vars = create_logistic_regression_model(top_all_vars_frame,
+                                                          c("Quick Asset Turnover Rate",
+                                                            "Current Asset Turnover Rate",
+                                                            "Research and development expense rate",
+                                                            "Total Asset Growth Rate",
+                                                            "Average Collection Days",
+                                                            "Revenue per person",
+                                                            "Quick Ratio",
+                                                            "Revenue Per Share (Yuan ¥)",
+                                                            "Tax rate (A)",
+                                                            "Equity to Liability",
+                                                            "Cash Flow to Total Assets",
+                                                            "ROA(A) before interest and % after tax",
+                                                            "Net Value Per Share (A)",
+                                                            "Retained Earnings to Total Assets"
+                                                            )
+                                                            )
+
+
+print("PROFIT")
+log_model_profit = create_logistic_regression_model(top_profit_vars_frame,
+                                                          unique(top_profit_vars_frame$fin_ratio)
+                                                            )
+print("MARKET PROSPECTS")
+log_model_market_prospects = create_logistic_regression_model(top_market_vars_frame,
+                                                          unique(top_market_vars_frame$fin_ratio)
+                                                            )
+print("SOLVENCY")
+log_model_solvency = create_logistic_regression_model(top_solvency_vars_frame,
+                                                          unique(top_solvency_vars_frame$fin_ratio)
+                                                            )
+print("CAPITAL STRUCTURE")
+log_model_capital_struct = create_logistic_regression_model(top_capital_struct_vars_frame,
+                                                          unique(top_capital_struct_vars_frame$fin_ratio)
+                                                            )
+print("TURNOVER")
+log_model_turnover = create_logistic_regression_model(top_turnover_vars_frame,
+                                                          unique(top_turnover_vars_frame$fin_ratio)
+                                                            )
+print("CASH FLOW")
+log_model_cash_flow = create_logistic_regression_model(top_cash_flow_vars_frame,
+                                                          unique(top_cash_flow_vars_frame$fin_ratio)
+                                                            )
+print("GROWTH")
+log_model_growth = create_logistic_regression_model(top_growth_ratio_vars_frame,
+                                                          unique(top_growth_ratio_vars_frame$fin_ratio)
+                                                            )
+print("OTHER RATIOS")
+log_model_other_ratios = create_logistic_regression_model(top_other_vars_frame,
+                                                          unique(top_other_vars_frame$fin_ratio)
+                                                            )
+
+```
+
+
+```{r Create a function to create the confusion matrices}
+
+create_confusion_matrix = function(model_object_with_dataframes) {
+  
+  predictions = predict(
+                        model_object_with_dataframes$Model, 
+                        newdata=model_object_with_dataframes$testing_df,
+                        type="response"
+                        )
+  
+  predicted_outcomes=ifelse(predictions > 0.5, 1, 0)
+  
+  # Actual outcomes
+  actual_outcomes = (model_object_with_dataframes$testing_df)$`Bankrupt?`
+  
+  confusion_matrix = confusionMatrix(as.factor(predicted_outcomes), as.factor(actual_outcomes))
+  
+  confusion_matrix_table = table(Predicted=as.factor(predicted_outcomes), Actual = as.factor(actual_outcomes))
+  
+  print(confusion_matrix)
+  
+}
+
+
+```
+
+
+
+```{r See confusion matrices}
+
+print("ALL")
+conf_matrix_log_all = create_confusion_matrix(log_model_all_top_vars)
+
+print("PROFIT")
+conf_matrix_log_profit = create_confusion_matrix(log_model_profit)
+
+print("MARKET PROSPECTS")
+conf_matrix_log_market = create_confusion_matrix(log_model_market_prospects)
+
+print("SOLVENCY")
+conf_matrix_log_solvency = create_confusion_matrix(log_model_solvency)
+
+print("CAPITAL STRUCTURE")
+conf_matrix_log_cap_struct = create_confusion_matrix(log_model_capital_struct)
+
+print("TURNOVER")
+conf_matrix_log_turnover = create_confusion_matrix(log_model_turnover)
+
+print("CASH FLOW")
+conf_matrix_log_cashflow = create_confusion_matrix(log_model_cash_flow)
+
+print("GROWTH")
+conf_matrix_log_growth = create_confusion_matrix(log_model_growth)
+
+print("OTHER RATIOS")
+conf_matrix_log_other = create_confusion_matrix(log_model_other_ratios)
+
+```
+
+```{r}
+# Logistic model performance: ACCURACY?
+
+#Compare accuracy of all models
+
+#Create a dataframe to compare accuracy of all Logistic models
+logistic_accuracy_df = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Accuracy = c(conf_matrix_log_all$overall["Accuracy"], 
+                                           conf_matrix_log_profit$overall["Accuracy"],
+                                           conf_matrix_log_market$overall["Accuracy"],
+                                           conf_matrix_log_solvency$overall["Accuracy"],
+                                           conf_matrix_log_cap_struct$overall["Accuracy"],
+                                           conf_matrix_log_turnover$overall["Accuracy"],
+                                           conf_matrix_log_cashflow$overall["Accuracy"],
+                                           conf_matrix_log_growth$overall["Accuracy"], 
+                                           conf_matrix_log_other$overall["Accuracy"]))
+
+#Ranking of Logistic models by accuracy (highest to lowest)
+logistic_accuracy_df[order(-logistic_accuracy_df$Accuracy),]
+
+#Visualize accuracy of all Logistic models (highest to lowest), include percentage in bars (same color for all bars)
+logit_accuracy_plot = ggplot(logistic_accuracy_df, aes(x=reorder(Model, -Accuracy), y=Accuracy,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Accuracy)), vjust=-0.5) +
+  labs(title="Accuracy of Logistic Models", x="Model", y="Accuracy") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(logit_accuracy_plot)
+
+```
+
+```{r}
+# Logistic model performance: SPECIFICITY?
+
+#Compare specificity of all models
+
+#Create a dataframe to compare accuracy of all Logistic models
+logistic_specificity_df = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Specificity = c(conf_matrix_log_all$byClass["Specificity"], 
+                                           conf_matrix_log_profit$byClass["Specificity"],
+                                           conf_matrix_log_market$byClass["Specificity"],
+                                           conf_matrix_log_solvency$byClass["Specificity"],
+                                           conf_matrix_log_cap_struct$byClass["Specificity"],
+                                           conf_matrix_log_turnover$byClass["Specificity"],
+                                           conf_matrix_log_cashflow$byClass["Specificity"],
+                                           conf_matrix_log_growth$byClass["Specificity"], 
+                                           conf_matrix_log_other$byClass["Specificity"]
+                                           )
+                              )
+
+#Ranking of Logistic models by accuracy (highest to lowest)
+logistic_specificity_df[order(-logistic_specificity_df$Specificity),]
+
+#Visualize accuracy of all Logistic models (highest to lowest), include percentage in bars (same color for all bars)
+logit_specificity_plot = ggplot(logistic_specificity_df, aes(x=reorder(Model, -Specificity), y=Specificity,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Specificity)), vjust=-0.5) +
+  labs(title="Specificity of Logistic Models", x="Model", y="Specificity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+print(logit_specificity_plot)
+
+```
+
+
+
+KNN ANALYSIS
+
+1. RESAMPLING TEST DATA
+ 
+- Approach: perform both oversampling and undersampling simultaneously using the ovun.sample function in R with method = "both". This function allows to specify the desired sample size (N) and the probability of resampling from the minority class (bankrupt) after undersampling (p).
+
+- N: There are several approaches to choosing N: Equalize Classes, Proportional Oversampling, and Custom Sampling. I chose Proportional Oversampling, which calculates the ratio of the number of samples in the majority class to the number of samples in the minority class, and then set N to a multiple of the minority class size that brings it closer to the majority class size. 
+
+- p: I chose p = 0.4. 
+
+
+
+2. CHOSE "K"
+
+- Chose value for “K” (i.e. the number of nearest neighbors to consider for classification of an observation) using three different approaches: 
+
+a.	Fixed K for all models: K = sqrt(n); with n = number of observations in training dataset. This is a common starting point / rule of thumb for choosing K.
+b.	K that maximizes accuracy
+c.	K that maximizes specificity
+
+
+
+
+3. COMPARE MODEL PERFORMANCE 
+
+- Model performance measured by accuracy and specificity.
+
+
+- One KNN model for each group of financial ratios (8) + one KNN model for all ratios -> total of 9 KNN models: 
+  -> All Ratios
+  -> Profitability Ratios
+  -> Market Prospect Ratios
+  -> Solvency Ratios
+  -> Capital Structure Ratios
+  -> Turnover Ratios
+  -> Cash Flow Ratios
+  -> Growth Ratios
+  -> Other Ratios
+
+- Model performance: 
+  -> Run confusion matrix.
+  -> Rank models according to accuracy and specificity.
+  -> Visualize accuracy and specificity of all KNN models (highest to lowest).
+
+
+```{r}
+#RESAMPLING TEST DATA. 
+
+#Approach for each group of financial ratios:
+#- Create a training and testing dataset (based on Logistic Regression models training and testign datasets) and change variable names (otherwise the ovun.sample funcion won't work): 
+    #rename dependent variable from "Bankrupt?" to "Bankrupt" 
+    #eliminate spaces in variable names
+#- Resample by oversampling the minority class and undersampling the majority class
+
+#Parameters for resampling
+p <- 0.4  # Probability for resampling from the minority class (= bankrupt)
+N <- 1259  # Desired sample size after resampling
+seed <- 47  # Set seed for reproducibility
+
+#Check class distribution in log_model_all_top_vars$training_df
+table(log_model_all_top_vars$training_df$`Bankrupt?`)
+# 0    1
+# 4515  259
+
+#We choose N = 1259 = 5 times the number of instances of minority class in training dataset before resampling (5*259=1259)
+
+
+
+
+#ALL_TOP_VARS
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables 
+knn_all_training <- as.data.frame(log_model_all_top_vars$training_df)
+names(knn_all_training)[names(knn_all_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_all_training) <- make.names(names(knn_all_training))
+
+knn_all_testing <- as.data.frame(log_model_all_top_vars$testing_df)
+names(knn_all_testing)[names(knn_all_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_all_testing) <- make.names(names(knn_all_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_all_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_all_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_all_training_balanced
+print(paste("ALL balanced training sample size:", nrow(knn_all_training_balanced)))
+print("ALL balanced training class distribution:")
+table(knn_all_training_balanced$Bankrupt)
+
+#PROFIT
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_profit_training <- as.data.frame(log_model_profit$training_df)
+names(knn_profit_training)[names(knn_profit_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_profit_training) <- make.names(names(knn_profit_training))
+
+knn_profit_testing <- as.data.frame(log_model_profit$testing_df)
+names(knn_profit_testing)[names(knn_profit_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_profit_testing) <- make.names(names(knn_profit_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_profit_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_profit_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_profit_training_balanced
+print(paste("PROFIT balanced training sample size:", nrow(knn_profit_training_balanced)))
+print("PROFIT balanced training class distribution:")
+table(knn_profit_training_balanced$Bankrupt)
+
+#MARKET PROSPECTS
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_market_prospects_training <- as.data.frame(log_model_market_prospects$training_df)
+names(knn_market_prospects_training)[names(knn_market_prospects_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_market_prospects_training) <- make.names(names(knn_market_prospects_training))
+
+knn_market_prospects_testing <- as.data.frame(log_model_market_prospects$testing_df)
+names(knn_market_prospects_testing)[names(knn_market_prospects_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_market_prospects_testing) <- make.names(names(knn_market_prospects_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_market_prospects_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_market_prospects_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_market_prospects_training_balanced
+print(paste("MARKET PROSPECTS balanced training sample size:", nrow(knn_market_prospects_training_balanced)))
+print("MARKET PROSPECTS balanced training class distribution:")
+table(knn_market_prospects_training_balanced$Bankrupt)
+
+#SOLVENCY
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_solvency_training <- as.data.frame(log_model_solvency$training_df)
+names(knn_solvency_training)[names(knn_solvency_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_solvency_training) <- make.names(names(knn_solvency_training))
+
+knn_solvency_testing <- as.data.frame(log_model_solvency$testing_df)
+names(knn_solvency_testing)[names(knn_solvency_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_solvency_testing) <- make.names(names(knn_solvency_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_solvency_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_solvency_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_solvency_training_balanced
+print(paste("SOLVENCY balanced training sample size:", nrow(knn_solvency_training_balanced)))
+print("SOLVENCY balanced training class distribution:")
+table(knn_solvency_training_balanced$Bankrupt)
+
+#CAPITAL STRUCTURE
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_capital_struct_training <- as.data.frame(log_model_capital_struct$training_df)
+names(knn_capital_struct_training)[names(knn_capital_struct_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_capital_struct_training) <- make.names(names(knn_capital_struct_training))
+
+knn_capital_struct_testing <- as.data.frame(log_model_capital_struct$testing_df)
+names(knn_capital_struct_testing)[names(knn_capital_struct_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_capital_struct_testing) <- make.names(names(knn_capital_struct_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_capital_struct_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_capital_struct_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_capital_struct_training_balanced
+print(paste("CAPITAL STRUCTURE balanced training sample size:", nrow(knn_capital_struct_training_balanced)))
+print("CAPITAL STRUCTURE balanced training class distribution:")
+table(knn_capital_struct_training_balanced$Bankrupt)
+
+
+#TURNOVER
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_turnover_training <- as.data.frame(log_model_turnover$training_df)
+names(knn_turnover_training)[names(knn_turnover_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_turnover_training) <- make.names(names(knn_turnover_training))
+
+knn_turnover_testing <- as.data.frame(log_model_turnover$testing_df)
+names(knn_turnover_testing)[names(knn_turnover_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_turnover_testing) <- make.names(names(knn_turnover_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_turnover_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_turnover_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_turnover_training_balanced
+print(paste("TURNOVER balanced training sample size:", nrow(knn_turnover_training_balanced)))
+print("TURNOVER balanced training class distribution:")
+table(knn_turnover_training_balanced$Bankrupt)
+
+
+#CASH FLOW
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_cash_flow_training <- as.data.frame(log_model_cash_flow$training_df)
+names(knn_cash_flow_training)[names(knn_cash_flow_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_cash_flow_training) <- make.names(names(knn_cash_flow_training))
+
+knn_cash_flow_testing <- as.data.frame(log_model_cash_flow$testing_df)
+names(knn_cash_flow_testing)[names(knn_cash_flow_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_cash_flow_testing) <- make.names(names(knn_cash_flow_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_cash_flow_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_cash_flow_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_cash_flow_training_balanced
+print(paste("CASH FLOW balanced training sample size:", nrow(knn_cash_flow_training_balanced)))
+print("CASH FLOW balanced training class distribution:")
+table(knn_cash_flow_training_balanced$Bankrupt)
+
+
+#GROWTH
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_growth_training <- as.data.frame(log_model_growth$training_df)
+names(knn_growth_training)[names(knn_growth_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_growth_training) <- make.names(names(knn_growth_training))
+
+knn_growth_testing <- as.data.frame(log_model_growth$testing_df)
+names(knn_growth_testing)[names(knn_growth_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_growth_testing) <- make.names(names(knn_growth_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_growth_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_growth_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_growth_training_balanced
+print(paste("GROWTH balanced training sample size:", nrow(knn_growth_training_balanced)))
+print("GROWTH balanced training class distribution:")
+table(knn_growth_training_balanced$Bankrupt)
+
+#OTHER RATIOS
+
+#Create a training and testing datasets and rename dependent variable from "Bankrupt?" to "Bankrupt" and eliminate spaces in names of independent variables
+
+knn_other_ratios_training <- as.data.frame(log_model_other_ratios$training_df)
+names(knn_other_ratios_training)[names(knn_other_ratios_training) == "Bankrupt?"] <- "Bankrupt"
+names(knn_other_ratios_training) <- make.names(names(knn_other_ratios_training))
+
+knn_other_ratios_testing <- as.data.frame(log_model_other_ratios$testing_df)
+names(knn_other_ratios_testing)[names(knn_other_ratios_testing) == "Bankrupt?"] <- "Bankrupt"
+names(knn_other_ratios_testing) <- make.names(names(knn_other_ratios_testing))
+
+#Simultaneously oversample and undersample testing dataset (setting method = "both")
+
+knn_other_ratios_training_balanced <- ovun.sample(Bankrupt ~ ., data = knn_other_ratios_training, method = "both", p=p, N=N, seed=seed)$data
+
+#Check sample size and class distribution in knn_other_ratios_training_balanced
+print(paste("OTHER RATIOS balanced training sample size:", nrow(knn_other_ratios_training_balanced)))
+print("OTHER RATIOS balanced training class distribution:")
+table(knn_other_ratios_training_balanced$Bankrupt)
+
+```
+
+We are all good: resampling worked as intended: 
+-> N is indeed equal to 1'259. (i.e. a five times multiple of the instances of the minority class in the original training data, in other words (5 x 259) = 1’259. 
+-> Indeed setting the value of p=0.4, resulted in 40% of the resampled data to be of the minority class (bankrupt). 
+
+
+```{r}
+#FIXED K: Create a function to create KNN models with fixed K
+
+create_knn_model_fixed_k = function(training_df, testing_df) {
+  
+  k = round(sqrt(nrow(training_df)))
+  
+  knn_model = knn(train = training_df[, -ncol(training_df)],   #Drop last column = "Bankrupt"
+                      test = testing_df[, -ncol(testing_df)],  #Drop last column = "Bankrupt"
+                      cl = training_df$`Bankrupt`, 
+                      k = k)
+  
+  confusion_matrix = confusionMatrix(as.factor(knn_model), as.factor(testing_df$`Bankrupt`))
+    
+  knn_model_accuracy = confusion_matrix$overall["Accuracy"]
+  knn_model_specificity = confusion_matrix$byClass["Specificity"]
+  
+  print(paste0("Using Fixed K value, K=", k, " With Accuracy=", knn_model_accuracy, " and Specificity=", confusion_matrix$byClass["Specificity"]))
+  
+  return(list(Model=knn_model, ConfusionMatrix=confusion_matrix, Accuracy=knn_model_accuracy, specificity=confusion_matrix$byClass["Specificity"]))
+}
+
+```
+
+```{r}
+#FIXED K: Run KNN models
+
+print("KNN model 1: Top All vars balanced with fixed k")
+knn_model_all_fixed_k = create_knn_model_fixed_k(training_df=knn_all_training_balanced, 
+                                 testing_df=knn_all_testing)
+
+print("KNN model 2: Top Profit vars balanced with fixed k")
+knn_model_profit_fixed_k = create_knn_model_fixed_k(training_df=knn_profit_training_balanced, 
+                                 testing_df=knn_profit_testing)
+
+print("KNN model 3: Top Market Prospects vars balanced with fixed k")
+knn_model_market_prospects_fixed_k = create_knn_model_fixed_k(training_df=knn_market_prospects_training_balanced, 
+                                 testing_df=knn_market_prospects_testing)
+
+print("KNN model 4: Top Solvency vars balanced with fixed k")
+knn_model_solvency_fixed_k = create_knn_model_fixed_k(training_df=knn_solvency_training_balanced, 
+                                 testing_df=knn_solvency_testing)
+
+print("KNN model 5: Top Capital Structure vars balanced with fixed k")
+knn_model_capital_struct_fixed_k = create_knn_model_fixed_k(training_df=knn_capital_struct_training_balanced, 
+                                 testing_df=knn_capital_struct_testing)
+
+print("KNN model 6: Top Turnover vars balanced with fixed k")
+knn_model_turnover_fixed_k = create_knn_model_fixed_k(training_df=knn_turnover_training_balanced, 
+                                 testing_df=knn_turnover_testing)
+
+print("KNN model 7: Top Cash Flow vars balanced with fixed k")
+knn_model_cash_flow_fixed_k = create_knn_model_fixed_k(training_df=knn_cash_flow_training_balanced, 
+                                 testing_df=knn_cash_flow_testing)
+
+print("KNN model 8: Top Growth vars balanced with fixed k")
+knn_model_growth_fixed_k = create_knn_model_fixed_k(training_df=knn_growth_training_balanced, 
+                                 testing_df=knn_growth_testing)
+
+print("KNN model 9: Top Other Ratios vars balanced with fixed k")
+knn_model_other_ratios_fixed_k = create_knn_model_fixed_k(training_df=knn_other_ratios_training_balanced, 
+                                 testing_df=knn_other_ratios_testing)
+
+```
+
+```{r}
+#FIXED K: Confusion matrix
+
+print("KNN model 1: Top All vars with fixed k")
+confusionMatrix(knn_model_all_fixed_k$Model, as.factor(knn_all_testing$`Bankrupt`))
+
+print("KNN model 2: Top Profit vars with fixed k")
+confusionMatrix(knn_model_profit_fixed_k$Model, as.factor(knn_profit_testing$`Bankrupt`))
+
+print("KNN model 3: Top Market Prospects vars with fixed k")
+confusionMatrix(knn_model_market_prospects_fixed_k$Model, as.factor(knn_market_prospects_testing$`Bankrupt`))
+
+print("KNN model 4: Top Solvency vars with fixed k")
+confusionMatrix(knn_model_solvency_fixed_k$Model, as.factor(knn_solvency_testing$`Bankrupt`))
+
+print("KNN model 5: Top Capital Structure vars with fixed k")
+confusionMatrix(knn_model_capital_struct_fixed_k$Model, as.factor(knn_capital_struct_testing$`Bankrupt`))
+
+print("KNN model 6: Top Turnover vars with fixed k")
+confusionMatrix(knn_model_turnover_fixed_k$Model, as.factor(knn_turnover_testing$`Bankrupt`))
+
+print("KNN model 7: Top Cash Flow vars with fixed k")
+confusionMatrix(knn_model_cash_flow_fixed_k$Model, as.factor(knn_cash_flow_testing$`Bankrupt`))
+
+print("KNN model 8: Top Growth vars with fixed k")
+confusionMatrix(knn_model_growth_fixed_k$Model, as.factor(knn_growth_testing$`Bankrupt`))
+
+print("KNN model 9: Top Other Ratios vars with fixed k")
+confusionMatrix(knn_model_other_ratios_fixed_k$Model, as.factor(knn_other_ratios_testing$`Bankrupt`))
+
+```
+
+```{r}
+#FIXED K: Performance using ACCURACY
+
+#Compare accuracy of all KNN models
+knn_model_all_top_vars_accuracy_fixed_k = knn_model_all_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_profit_accuracy_fixed_k = knn_model_profit_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_market_prospects_accuracy_fixed_k = knn_model_market_prospects_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_solvency_accuracy_fixed_k = knn_model_solvency_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_capital_struct_accuracy_fixed_k = knn_model_capital_struct_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_turnover_accuracy_fixed_k = knn_model_turnover_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_cash_flow_accuracy_fixed_k = knn_model_cash_flow_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_growth_accuracy_fixed_k = knn_model_growth_fixed_k$ConfusionMatrix$overall["Accuracy"]
+knn_model_other_ratios_accuracy_fixed_k = knn_model_other_ratios_fixed_k$ConfusionMatrix$overall["Accuracy"]
+
+#Create a dataframe to compare accuracy of all KNN models
+knn_accuracy_df_fixed_k = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Accuracy = c(knn_model_all_top_vars_accuracy_fixed_k, 
+                                           knn_model_profit_accuracy_fixed_k,
+                                           knn_model_market_prospects_accuracy_fixed_k,
+                                           knn_model_solvency_accuracy_fixed_k,
+                                           knn_model_capital_struct_accuracy_fixed_k,
+                                           knn_model_turnover_accuracy_fixed_k,
+                                           knn_model_cash_flow_accuracy_fixed_k,
+                                           knn_model_growth_accuracy_fixed_k, 
+                                           knn_model_other_ratios_accuracy_fixed_k))
+
+#Ranking of KNN models by accuracy (highest to lowest)
+knn_accuracy_df_fixed_k[order(-knn_accuracy_df_fixed_k$Accuracy),]
+
+#Visualize accuracy of all KNN models (highest to lowest), include percentage in bars (same color for all bars)
+ggplot(knn_accuracy_df_fixed_k, aes(x=reorder(Model, -Accuracy), y=Accuracy,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Accuracy)), vjust=-0.3) +
+  labs(title="Accuracy of KNN Models with Fixed K", x="Model", y="Accuracy") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+
+```{r}
+#FIXED K: Performance using SPECIFICITY
+
+#Compare SPECIFICITY of all KNN models
+knn_model_all_top_vars_specificity_fixed_k = knn_model_all_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_profit_specificity_fixed_k = knn_model_profit_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_market_prospects_specificity_fixed_k = knn_model_market_prospects_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_solvency_specificity_fixed_k = knn_model_solvency_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_capital_struct_specificity_fixed_k = knn_model_capital_struct_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_turnover_specificity_fixed_k = knn_model_turnover_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_cash_flow_specificity_fixed_k = knn_model_cash_flow_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_growth_specificity_fixed_k = knn_model_growth_fixed_k$ConfusionMatrix$byClass["Specificity"]
+knn_model_other_ratios_specificity_fixed_k = knn_model_other_ratios_fixed_k$ConfusionMatrix$byClass["Specificity"]
+
+#Create a dataframe to compare specificity of all KNN models
+knn_specificity_df_fixed_k = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Specificity = c(knn_model_all_top_vars_specificity_fixed_k, 
+                                           knn_model_profit_specificity_fixed_k,
+                                           knn_model_market_prospects_specificity_fixed_k,
+                                           knn_model_solvency_specificity_fixed_k,
+                                           knn_model_capital_struct_specificity_fixed_k,
+                                           knn_model_turnover_specificity_fixed_k,
+                                           knn_model_cash_flow_specificity_fixed_k,
+                                           knn_model_growth_specificity_fixed_k, 
+                                           knn_model_other_ratios_specificity_fixed_k))
+
+#Ranking of KNN models by specificity (highest to lowest)
+knn_specificity_df_fixed_k[order(-knn_specificity_df_fixed_k$Specificity),]
+
+#Visualize specificity of all KNN models (highest to lowest), include percentage in bars (same color for all bars)
+ggplot(knn_specificity_df_fixed_k, aes(x=reorder(Model, -Specificity), y=Specificity,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Specificity)), vjust=-0.3) +
+  labs(title="Specificity of KNN Models with Fixed K", x="Model", y="Specificity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+# K BEST ACCURACY: Create a function to create KNN models, choosing k that yields highest accuracy
+
+create_knn_model = function(training_df, testing_df, max_neighbors) {
+  
+  max_neighbors = seq.int(1, max_neighbors)
+  accuracies_list = list()
+  k_optimal = 0
+  accuracy_max = 0
+  
+  for (neighbor in max_neighbors) {
+    
+    knn_model = knn(train = training_df[, -ncol(training_df)], #Drop last column = "Bankrupt"
+                      test = testing_df[, -ncol(testing_df)],  #Drop last column = "Bankrupt"
+                      cl = training_df$`Bankrupt`, 
+                      k = neighbor)
+    
+    confusion_matrix = confusionMatrix(as.factor(knn_model), as.factor(testing_df$`Bankrupt`))
+    
+    knn_model_accuracy = confusion_matrix$overall["Accuracy"]
+    
+    if (knn_model_accuracy > accuracy_max) {
+      k_optimal = neighbor
+      accuracy_max = knn_model_accuracy
+    }
+  }
+  
+  knn_model = knn(train = training_df[, -ncol(training_df)],  #Drop last column = "Bankrupt"
+                      test = testing_df[, -ncol(testing_df)], #Drop last column = "Bankrupt"
+                      cl = training_df$`Bankrupt`, 
+                      k = k_optimal)
+  
+  confusion_matrix = confusionMatrix(as.factor(knn_model), as.factor(testing_df$`Bankrupt`))
+    
+  knn_model_accuracy = confusion_matrix$overall["Accuracy"]
+  
+  print(paste0("Using Optimal K value, K=", k_optimal, " With Accuracy=", knn_model_accuracy))
+  
+  return(list(Model=knn_model, ConfusionMatrix=confusion_matrix, Accuracy=knn_model_accuracy))
+}
+```
+
+```{r}
+#K BEST ACCURACY: Run KNN models using balanced datasets
+
+print("KNN model 1: Top All vars balanced")
+knn_model_all = create_knn_model(training_df=knn_all_training_balanced, 
+                                 testing_df=knn_all_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 2: Top Profit vars balanced")
+knn_model_profit = create_knn_model(training_df=knn_profit_training_balanced, 
+                                 testing_df=knn_profit_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 3: Top Market Prospects vars balanced")
+knn_model_market_prospects = create_knn_model(training_df=knn_market_prospects_training_balanced, 
+                                 testing_df=knn_market_prospects_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 4: Top Solvency vars balanced")
+knn_model_solvency = create_knn_model(training_df=knn_solvency_training_balanced, 
+                                 testing_df=knn_solvency_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 5: Top Capital Structure vars balanced")
+knn_model_capital_struct = create_knn_model(training_df=knn_capital_struct_training_balanced, 
+                                 testing_df=knn_capital_struct_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 6: Top Turnover vars balanced")
+knn_model_turnover = create_knn_model(training_df=knn_turnover_training_balanced, 
+                                 testing_df=knn_turnover_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 7: Top Cash Flow vars balanced")
+knn_model_cash_flow = create_knn_model(training_df=knn_cash_flow_training_balanced, 
+                                 testing_df=knn_cash_flow_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 8: Top Growth vars balanced")
+knn_model_growth = create_knn_model(training_df=knn_growth_training_balanced, 
+                                 testing_df=knn_growth_testing, 
+                                 max_neighbors=69)
+
+print("KNN model 9: Top Other Ratios vars balanced")
+knn_model_other_ratios = create_knn_model(training_df=knn_other_ratios_training_balanced, 
+                                 testing_df=knn_other_ratios_testing, 
+                                 max_neighbors=69)
+
+```
+
+```{r}
+#K BEST ACCURACY: Confusion matrix for KNN models
+
+print("KNN model 1: Top All vars")
+confusionMatrix(knn_model_all$Model, as.factor(knn_all_testing$`Bankrupt`))
+
+print("KNN model 2: Top Profit vars")
+confusionMatrix(knn_model_profit$Model, as.factor(knn_profit_testing$`Bankrupt`))
+
+print("KNN model 3: Top Market Prospects vars")
+confusionMatrix(knn_model_market_prospects$Model, as.factor(knn_market_prospects_testing$`Bankrupt`))
+
+print("KNN model 4: Top Solvency vars")
+confusionMatrix(knn_model_solvency$Model, as.factor(knn_solvency_testing$`Bankrupt`))
+
+print("KNN model 5: Top Capital Structure vars")
+confusionMatrix(knn_model_capital_struct$Model, as.factor(knn_capital_struct_testing$`Bankrupt`))
+
+print("KNN model 6: Top Turnover vars")
+confusionMatrix(knn_model_turnover$Model, as.factor(knn_turnover_testing$`Bankrupt`))
+
+print("KNN model 7: Top Cash Flow vars")
+confusionMatrix(knn_model_cash_flow$Model, as.factor(knn_cash_flow_testing$`Bankrupt`))
+
+print("KNN model 8: Top Growth vars")
+confusionMatrix(knn_model_growth$Model, as.factor(knn_growth_testing$`Bankrupt`))
+
+print("KNN model 9: Top Other Ratios vars")
+confusionMatrix(knn_model_other_ratios$Model, as.factor(knn_other_ratios_testing$`Bankrupt`))
+
+```
+
+
+```{r}
+#K BEST ACCURACY: KNN model performance: ACCURACY
+
+#Compare accuracy of all KNN models
+
+#Create a dataframe to compare accuracy of all KNN models
+knn_accuracy_df = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Accuracy = c(knn_model_all$Accuracy, 
+                                           knn_model_profit$Accuracy,
+                                           knn_model_market_prospects$Accuracy,
+                                           knn_model_solvency$Accuracy,
+                                           knn_model_capital_struct$Accuracy,
+                                           knn_model_turnover$Accuracy,
+                                           knn_model_cash_flow$Accuracy,
+                                           knn_model_growth$Accuracy, 
+                                           knn_model_other_ratios$Accuracy))
+
+#Ranking of KNN models by accuracy (highest to lowest)
+knn_accuracy_df[order(-knn_accuracy_df$Accuracy),]
+
+#Visualize accuracy of all KNN models (highest to lowest), include percentage in bars and round them to 2 decimal places
+ggplot(knn_accuracy_df, aes(x=reorder(Model, -Accuracy), y=Accuracy)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=paste0(round(Accuracy * 100, 2), "%")), vjust=-0.3) +  # Round to 2 decimal places
+  labs(title="Accuracy of KNN Models with K such that Accuracy maximized", x="Model", y="Accuracy") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+#K BEST ACCURACY: KNN model performance: SPECIFICITY
+
+#Compare SPECIFICITY of all KNN models
+knn_model_all_top_vars_specificity = knn_model_all$ConfusionMatrix$byClass["Specificity"]
+knn_model_profit_specificity = knn_model_profit$ConfusionMatrix$byClass["Specificity"]
+knn_model_market_prospects_specificity = knn_model_market_prospects$ConfusionMatrix$byClass["Specificity"]
+knn_model_solvency_specificity = knn_model_solvency$ConfusionMatrix$byClass["Specificity"]
+knn_model_capital_struct_specificity = knn_model_capital_struct$ConfusionMatrix$byClass["Specificity"]
+knn_model_turnover_specificity = knn_model_turnover$ConfusionMatrix$byClass["Specificity"]
+knn_model_cash_flow_specificity = knn_model_cash_flow$ConfusionMatrix$byClass["Specificity"]
+knn_model_growth_specificity = knn_model_growth$ConfusionMatrix$byClass["Specificity"]
+knn_model_other_ratios_specificity = knn_model_other_ratios$ConfusionMatrix$byClass["Specificity"]
+
+#Create a dataframe to compare SPECIFICITY of all KNN models
+knn_specificity_df = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Specificity = c(knn_model_all_top_vars_specificity, 
+                                           knn_model_profit_specificity,
+                                           knn_model_market_prospects_specificity,
+                                           knn_model_solvency_specificity,
+                                           knn_model_capital_struct_specificity,
+                                           knn_model_turnover_specificity,
+                                           knn_model_cash_flow_specificity,
+                                           knn_model_growth_specificity, 
+                                           knn_model_other_ratios_specificity))
+
+#Ranking of KNN models by SPECIFICITY (highest to lowest)
+knn_specificity_df[order(-knn_specificity_df$Specificity),]
+
+#Visualize SPECIFICITY of all KNN models (highest to lowest), include percentage in bars (same color for all bars)
+ggplot(knn_specificity_df, aes(x=reorder(Model, -Specificity), y=Specificity,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Specificity)), vjust=-0.3) +
+  labs(title="Specificity of KNN Models with K such that Accuracy maximized", x="Model", y="Specificity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+
+```{r}
+#K BEST SPECIFICITY: Create a function to create KNN models with k such that Specificity is maximized
+
+create_knn_model_max_specificity = function(training_df, testing_df) {
+  
+  max_specificity = 0
+  k_optimal = 0
+  
+  for (neighbor in seq.int(1, 69)) {
+    
+    knn_model = knn(train = training_df[, -ncol(training_df)],  #Drop last column = "Bankrupt"
+                      test = testing_df[, -ncol(testing_df)],  #Drop last column = "Bankrupt"
+                      cl = training_df$`Bankrupt`, 
+                      k = neighbor)
+    
+    confusion_matrix = confusionMatrix(as.factor(knn_model), as.factor(testing_df$`Bankrupt`))
+    
+    knn_model_specificity = confusion_matrix$byClass["Specificity"]
+    
+    if (knn_model_specificity > max_specificity) {
+      k_optimal = neighbor
+      max_specificity = knn_model_specificity
+    }
+  }
+  
+  knn_model = knn(train = training_df[, -ncol(training_df)],  #Drop last column = "Bankrupt"
+                      test = testing_df[, -ncol(testing_df)],  #Drop last column = "Bankrupt"
+                      cl = training_df$`Bankrupt`, 
+                      k = k_optimal)
+  
+  confusion_matrix = confusionMatrix(as.factor(knn_model), as.factor(testing_df$`Bankrupt`))
+    
+  knn_model_specificity = confusion_matrix$byClass["Specificity"]
+  
+  print(paste0("Using Optimal K value, K=", k_optimal, " With Specificity=", knn_model_specificity))
+  
+  return(list(Model=knn_model, ConfusionMatrix=confusion_matrix, Specificity=knn_model_specificity))
+}
+
+```
+
+```{r}
+#K BEST SPECIFICITY: Run KNN models using balanced datasets
+
+print("KNN model 1: Top All vars balanced with k such that Specificity is maximized")
+knn_model_all_max_specificity = create_knn_model_max_specificity(training_df=knn_all_training_balanced, 
+                                 testing_df=knn_all_testing)
+
+print("KNN model 2: Top Profit vars balanced with k such that Specificity is maximized")
+knn_model_profit_max_specificity = create_knn_model_max_specificity(training_df=knn_profit_training_balanced, 
+                                 testing_df=knn_profit_testing)
+
+print("KNN model 3: Top Market Prospects vars balanced with k such that Specificity is maximized")
+knn_model_market_prospects_max_specificity = create_knn_model_max_specificity(training_df=knn_market_prospects_training_balanced, 
+                                 testing_df=knn_market_prospects_testing)
+
+print("KNN model 4: Top Solvency vars balanced with k such that Specificity is maximized")
+knn_model_solvency_max_specificity = create_knn_model_max_specificity(training_df=knn_solvency_training_balanced, 
+                                 testing_df=knn_solvency_testing)
+
+print("KNN model 5: Top Capital Structure vars balanced with k such that Specificity is maximized")
+knn_model_capital_struct_max_specificity = create_knn_model_max_specificity(training_df=knn_capital_struct_training_balanced, 
+                                 testing_df=knn_capital_struct_testing)
+
+print("KNN model 6: Top Turnover vars balanced with k such that Specificity is maximized")
+knn_model_turnover_max_specificity = create_knn_model_max_specificity(training_df=knn_turnover_training_balanced, 
+                                 testing_df=knn_turnover_testing)
+
+print("KNN model 7: Top Cash Flow vars balanced with k such that Specificity is maximized")
+knn_model_cash_flow_max_specificity = create_knn_model_max_specificity(training_df=knn_cash_flow_training_balanced, 
+                                 testing_df=knn_cash_flow_testing)
+
+print("KNN model 8: Top Growth vars balanced with k such that Specificity is maximized")
+knn_model_growth_max_specificity = create_knn_model_max_specificity(training_df=knn_growth_training_balanced, 
+                                 testing_df=knn_growth_testing)
+
+print("KNN model 9: Top Other Ratios vars balanced with k such that Specificity is maximized")
+knn_model_other_ratios_max_specificity = create_knn_model_max_specificity(training_df=knn_other_ratios_training_balanced, 
+                                 testing_df=knn_other_ratios_testing)
+
+```
+
+```{r}
+#K BEST SPECIFICITY: Confusion matrix
+
+print("KNN model 1: Top All vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_all_max_specificity$Model, as.factor(knn_all_testing$`Bankrupt`))
+
+print("KNN model 2: Top Profit vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_profit_max_specificity$Model, as.factor(knn_profit_testing$`Bankrupt`))
+
+print("KNN model 3: Top Market Prospects vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_market_prospects_max_specificity$Model, as.factor(knn_market_prospects_testing$`Bankrupt`))
+
+print("KNN model 4: Top Solvency vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_solvency_max_specificity$Model, as.factor(knn_solvency_testing$`Bankrupt`))
+
+print("KNN model 5: Top Capital Structure vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_capital_struct_max_specificity$Model, as.factor(knn_capital_struct_testing$`Bankrupt`))
+
+print("KNN model 6: Top Turnover vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_turnover_max_specificity$Model, as.factor(knn_turnover_testing$`Bankrupt`))
+
+print("KNN model 7: Top Cash Flow vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_cash_flow_max_specificity$Model, as.factor(knn_cash_flow_testing$`Bankrupt`))
+
+print("KNN model 8: Top Growth vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_growth_max_specificity$Model, as.factor(knn_growth_testing$`Bankrupt`))
+
+print("KNN model 9: Top Other Ratios vars with k such that Specificity is maximized")
+confusionMatrix(knn_model_other_ratios_max_specificity$Model, as.factor(knn_other_ratios_testing$`Bankrupt`))
+
+```
+
+
+```{r}
+#K BEST SPECIFICITY: Performance ACCURACY
+
+#Compare accuracy of all KNN models
+knn_model_all_top_vars_accuracy_max_specificity = knn_model_all_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_profit_accuracy_max_specificity = knn_model_profit_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_market_prospects_accuracy_max_specificity = knn_model_market_prospects_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_solvency_accuracy_max_specificity = knn_model_solvency_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_capital_struct_accuracy_max_specificity = knn_model_capital_struct_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_turnover_accuracy_max_specificity = knn_model_turnover_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_cash_flow_accuracy_max_specificity = knn_model_cash_flow_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_growth_accuracy_max_specificity = knn_model_growth_max_specificity$ConfusionMatrix$overall["Accuracy"]
+knn_model_other_ratios_accuracy_max_specificity = knn_model_other_ratios_max_specificity$ConfusionMatrix$overall["Accuracy"]
+
+
+#Create a dataframe to compare accuracy of all KNN models
+knn_accuracy_df_max_specificity = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Accuracy = c(knn_model_all_top_vars_accuracy_max_specificity, 
+                                           knn_model_profit_accuracy_max_specificity,
+                                           knn_model_market_prospects_accuracy_max_specificity,
+                                           knn_model_solvency_accuracy_max_specificity,
+                                           knn_model_capital_struct_accuracy_max_specificity,
+                                           knn_model_turnover_accuracy_max_specificity,
+                                           knn_model_cash_flow_accuracy_max_specificity,
+                                           knn_model_growth_accuracy_max_specificity, 
+                                           knn_model_other_ratios_accuracy_max_specificity))
+
+
+#Ranking of KNN models by accuracy (highest to lowest)
+knn_accuracy_df_max_specificity[order(-knn_accuracy_df_max_specificity$Accuracy),]
+
+#Visualize accuracy of all KNN models (highest to lowest), include percentage in bars and round them to 2 decimal places
+ggplot(knn_accuracy_df_max_specificity, aes(x=reorder(Model, -Accuracy), y=Accuracy)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=paste0(round(Accuracy * 100, 2), "%")), vjust=-0.2) +  # Round to 2 decimal places
+  labs(title="Accuracy of KNN Models with K such that Specificity is Maximized", x="Model", y="Accuracy") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+```{r}
+#K BEST SPECIFICITY: Performance SPECIFICITY
+
+#Compare SPECIFICITY of all KNN models
+knn_model_all_top_vars_specificity_max_specificity = knn_model_all_max_specificity$Specificity
+knn_model_profit_specificity_max_specificity = knn_model_profit_max_specificity$Specificity
+knn_model_market_prospects_specificity_max_specificity = knn_model_market_prospects_max_specificity$Specificity
+knn_model_solvency_specificity_max_specificity = knn_model_solvency_max_specificity$Specificity
+knn_model_capital_struct_specificity_max_specificity = knn_model_capital_struct_max_specificity$Specificity
+knn_model_turnover_specificity_max_specificity = knn_model_turnover_max_specificity$Specificity
+knn_model_cash_flow_specificity_max_specificity = knn_model_cash_flow_max_specificity$Specificity
+knn_model_growth_specificity_max_specificity = knn_model_growth_max_specificity$Specificity
+knn_model_other_ratios_specificity_max_specificity = knn_model_other_ratios_max_specificity$Specificity
+
+#Create a dataframe to compare SPECIFICITY of all KNN models
+knn_specificity_df_max_specificity = data.frame(Model = c("All", 
+                                       "Profit",
+                                       "Market Prospects",
+                                       "Solvency",
+                                       "Capital Struct",
+                                       "Turnover",
+                                       "Cash Flow",
+                                       "Growth", 
+                                       "Other Ratios"),
+                              Specificity = c(knn_model_all_top_vars_specificity_max_specificity, 
+                                           knn_model_profit_specificity_max_specificity,
+                                           knn_model_market_prospects_specificity_max_specificity,
+                                           knn_model_solvency_specificity_max_specificity,
+                                           knn_model_capital_struct_specificity_max_specificity,
+                                           knn_model_turnover_specificity_max_specificity,
+                                           knn_model_cash_flow_specificity_max_specificity,
+                                           knn_model_growth_specificity_max_specificity, 
+                                           knn_model_other_ratios_specificity_max_specificity))
+
+#Ranking of KNN models by SPECIFICITY (highest to lowest)
+knn_specificity_df_max_specificity[order(-knn_specificity_df_max_specificity$Specificity),]
+
+#Visualize SPECIFICITY of all KNN models (highest to lowest), include percentage in bars (same color for all bars)
+ggplot(knn_specificity_df_max_specificity, aes(x=reorder(Model, -Specificity), y=Specificity,)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=scales::percent(Specificity)), vjust=-0.2) +
+  labs(title="Specificity of KNN Models with K such that Specificity is Maximized", x="Model", y="Specificity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
