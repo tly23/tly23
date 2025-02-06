@@ -1,9 +1,6 @@
-- 👋 Hi, I’m Trang Ly.
-- I am senior financial data analyst at Optum
-- 👀 I’m interested in data science
-- 🌱 I’m currently learning python and R
-- 💞️ I’m looking to collaborate on data science projects
-- 📫 How to reach me trangly901@gmail.com
+  👋 Hi, I’m Trang Ly.
+Data-driven financial consultant with 5+ years of experience leveraging machine learning, statistical analysis, and advanced data modeling to improve operational efficiencies and financial performance. Strong proficiency in Python, SQL, and Tableau with a focus on driving personalized, actionable insights. Currently pursuing an MS in Analytics to expand expertise in AI/ML and predictive analytics.
+  📫 How to reach me trangly901@gmail.com
 
 <!---
 tly23/tly23 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
