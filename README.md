@@ -2,7 +2,7 @@
   
   A Financial Consultant pivoting into Data Science
   
-  FP&A | Strategic Fiance | Data Science | Based in USA
+  FP&A | Strategic Finance | Data Science | Based in USA
 
   ## Skills
   ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
