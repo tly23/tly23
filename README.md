@@ -15,6 +15,7 @@
   ![Tableau](https://img.shields.io/badge/Tableau-E97627?style=flat&logo=tableau&logoColor=white)
   ![PySpark](https://img.shields.io/badge/PySpark-E34A1F?style=flat&logo=apache-spark&logoColor=white)
   ![Git](https://img.shields.io/badge/Git-F05032?style=flat&logo=git&logoColor=white)
+  [![Figma](https://img.shields.io/badge/Figma-F24E1E?style=flat&logo=figma&logoColor=white)](https://www.figma.com/)
 
   ![Trang's GitHub stats](https://github-readme-stats.vercel.app/api?username=tly23&show_icons=true&theme=dark)
 
