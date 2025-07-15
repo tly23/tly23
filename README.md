@@ -1,6 +1,6 @@
   # Trang Ly
   
-  A Financial Consultant pivoting into Data Science
+  Financial Consultant pivoting into Data Science
   
   FP&A | Strategic Finance | Data Science | Based in USA
 
