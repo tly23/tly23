@@ -6,6 +6,11 @@
 
   ## Skills
   ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+  ![SQL](https://img.shields.io/badge/SQL-336791?style=flat&logo=postgresql&logoColor=white)
+  ![Power BI](https://img.shields.io/badge/PowerBI-F2C811?style=flat&logo=powerbi&logoColor=black)
+  ![Tableau](https://img.shields.io/badge/Tableau-E97627?style=flat&logo=tableau&logoColor=white)
+  ![PySpark](https://img.shields.io/badge/PySpark-E34A1F?style=flat&logo=apache-spark&logoColor=white)
+  ![Git](https://img.shields.io/badge/Git-F05032?style=flat&logo=git&logoColor=white)
 
   ![Trang's GitHub stats](https://github-readme-stats.vercel.app/api?username=tly23&show_icons=true&theme=dark)
 
