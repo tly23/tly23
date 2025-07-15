@@ -1,4 +1,4 @@
-  #Trang Ly
+  # Trang Ly
   
   A Financial Consultant pivoting into Data Science
   
