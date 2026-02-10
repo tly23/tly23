@@ -2,7 +2,7 @@
   
   Finance & Analytics Consultant
   
-  FP&A | Strategic Finance | Data Science | Based in USA
+  Strategic Analytics | Data Science | Based in USA
 
   Let's connect!
   [![LinkedIn](https://img.shields.io/badge/-LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/trangly901) 
