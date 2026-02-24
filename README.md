@@ -1,6 +1,6 @@
   # Trang Ly
   
-  Finance & Analytics Consultant
+  Finance & Data Science Consultant
   
   Strategic Analytics | Data Science | Based in USA
 
